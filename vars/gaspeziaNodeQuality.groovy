@@ -10,33 +10,31 @@
 //   }
 // Pre-requis repo : pod avec conteneurs 'node' + 'sonar-scanner' ; fichier sonar-project.properties.
 // Credentials Jenkins : sonarqube-token, discord-webhook. Sonar INFO ne bloque JAMAIS.
+// La version pnpm vient du champ packageManager du repo (corepack). ng test (Angular) = sauté (Chrome requis).
 def call(Map config = [:]) {
     String sonarHost   = config.sonarHostUrl ?: 'https://sonarqube.gaspezia.fr'
-    String pnpmVersion = config.pnpmVersion  ?: '10.23.0'
     String sonarBranch = config.sonarBranch  ?: 'dev'
 
     stage('Lint & Test') {
         catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
             container('node') {
-                withEnv(["PNPM_VERSION=${pnpmVersion}"]) {
-                    sh '''
-                      set +e
-                      export DATABASE_URL="${DATABASE_URL:-postgresql://ci:ci@localhost:5432/ci?schema=public}"
-                      corepack enable
-                      corepack prepare pnpm@"$PNPM_VERSION" --activate
-                      pnpm install --frozen-lockfile || exit 1
-                      has(){ SCRIPT_NAME="$1" node -e 'process.exit(require("./package.json").scripts?.[process.env.SCRIPT_NAME]?0:1)' 2>/dev/null; }
-                      TESTSCRIPT=$(node -e 'console.log((require("./package.json").scripts||{}).test||"")' 2>/dev/null)
-                      if has prisma:generate; then pnpm prisma:generate; fi
-                      rc=0
-                      if has lint; then pnpm lint || { echo ">> lint: problemes (non bloquant)"; rc=1; }; else echo ">> pas de script lint"; fi
-                      if has test:cov; then pnpm test:cov || { echo ">> tests: echec (non bloquant)"; rc=1; };
-                      elif echo "$TESTSCRIPT" | grep -q "ng test"; then echo ">> Angular (ng test): coverage necessite Chrome headless -> saute (Sonar statique seul)";
-                      elif has test; then CI=true pnpm test || { echo ">> tests: echec/absents (non bloquant)"; rc=1; };
-                      else echo ">> pas de tests"; fi
-                      exit $rc
-                    '''
-                }
+                sh '''
+                  set +e
+                  export DATABASE_URL="${DATABASE_URL:-postgresql://ci:ci@localhost:5432/ci?schema=public}"
+                  export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+                  corepack enable
+                  pnpm install --frozen-lockfile || exit 1
+                  has(){ SCRIPT_NAME="$1" node -e 'process.exit(require("./package.json").scripts?.[process.env.SCRIPT_NAME]?0:1)' 2>/dev/null; }
+                  TESTSCRIPT=$(node -e 'console.log((require("./package.json").scripts||{}).test||"")' 2>/dev/null)
+                  if has prisma:generate; then pnpm prisma:generate; fi
+                  rc=0
+                  if has lint; then pnpm lint || { echo ">> lint: problemes (non bloquant)"; rc=1; }; else echo ">> pas de script lint"; fi
+                  if has test:cov; then pnpm test:cov || { echo ">> tests: echec (non bloquant)"; rc=1; };
+                  elif echo "$TESTSCRIPT" | grep -q "ng test"; then echo ">> Angular (ng test): coverage necessite Chrome headless -> saute (Sonar statique seul)";
+                  elif has test; then CI=true pnpm test || { echo ">> tests: echec/absents (non bloquant)"; rc=1; };
+                  else echo ">> pas de tests"; fi
+                  exit $rc
+                '''
             }
         }
     }
