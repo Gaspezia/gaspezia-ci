@@ -10,7 +10,7 @@ if (!TOKEN || !WEBHOOK) soft('SONAR_TOKEN ou DISCORD_WEBHOOK manquant');
 
 let report;
 try {
-  report = Object.fromEntries(readFileSync('.scannerwork/report-task.txt', 'utf8')
+  report = Object.fromEntries(readFileSync(process.env.REPORT_TASK || '.scannerwork/report-task.txt', 'utf8')
     .split('\n').filter(Boolean).map(l => { const i = l.indexOf('='); return [l.slice(0, i), l.slice(i + 1)]; }));
 } catch { soft('.scannerwork/report-task.txt introuvable (le scan a-t-il tourné ?)'); }
 
