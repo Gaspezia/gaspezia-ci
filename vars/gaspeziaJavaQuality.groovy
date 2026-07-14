@@ -13,7 +13,7 @@
 def call(Map config = [:]) {
     String sonarHost   = config.sonarHostUrl ?: 'https://sonarqube.gaspezia.fr'
     String sonarBranch = config.sonarBranch  ?: 'dev'
-    String jacocoVer   = config.jacocoVersion ?: '0.8.12'
+    String jacocoVer   = config.jacocoVersion ?: '0.8.15'
     String projectKey  = config.projectKey
     if (!projectKey) { error('gaspeziaJavaQuality: projectKey requis') }
 
