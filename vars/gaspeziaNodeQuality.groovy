@@ -29,8 +29,28 @@ def call(Map config = [:]) {
                   if has prisma:generate; then pnpm prisma:generate; fi
                   rc=0
                   if has lint; then pnpm lint || { echo ">> lint: problemes (non bloquant)"; rc=1; }; else echo ">> pas de script lint"; fi
+                  # Runner Angular : Vitest tourne en jsdom (headless), Karma exige Chrome.
+                  # On ne saute donc QUE Karma.
+                  ng_runner(){ node -e "
+                    const fs=require('fs');
+                    if(!fs.existsSync('angular.json')) process.exit(2);
+                    const a=JSON.parse(fs.readFileSync('angular.json','utf8'));
+                    for(const p of Object.values(a.projects||{})){
+                      const t=(p.architect||p.targets||{}).test; if(!t) continue;
+                      const b=String(t.builder||'');
+                      if(b.includes('@angular/build:unit-test')){console.log('vitest');process.exit(0);}
+                      if(b.includes('karma')){console.log('karma');process.exit(0);}
+                    }
+                    process.exit(2);" 2>/dev/null; }
                   if has test:cov; then pnpm test:cov || { echo ">> tests: echec (non bloquant)"; rc=1; };
-                  elif echo "$TESTSCRIPT" | grep -q "ng test"; then echo ">> Angular (ng test): coverage necessite Chrome headless -> saute (Sonar statique seul)";
+                  elif echo "$TESTSCRIPT" | grep -q "ng test"; then
+                    RUNNER=$(ng_runner) || RUNNER=inconnu
+                    if [ "$RUNNER" = "karma" ]; then
+                      echo ">> Angular/Karma: exige Chrome headless -> saute (Sonar statique seul)";
+                    else
+                      echo ">> Angular/$RUNNER: tests executes. Ajoute un script test:cov pour remonter la couverture a Sonar.";
+                      CI=true pnpm test || { echo ">> tests: echec (non bloquant)"; rc=1; };
+                    fi;
                   elif has test; then CI=true pnpm test || { echo ">> tests: echec/absents (non bloquant)"; rc=1; };
                   else echo ">> pas de tests"; fi
                   exit $rc
