@@ -88,8 +88,11 @@
       "nom": "tanguy-penin-web",
       "type": "web",
       "dispenses": {
-        "stepsBibliotheque": "2026-08-05 : 16e pipeline du parc, decouvert lors de l'audit de la refonte. NON migre vers gaspeziaAngularWeb car il n'a ni script `lint` ni sonar-project.properties : l'etape qualite de la bibliotheque tournerait a vide et le marquerait UNSTABLE en permanence. A migrer APRES lui avoir ajoute une config Sonar.",
-        "packageManager": "2026-08-05 : encore en pnpm@10.15.1. Ce depot ne vit pas dans /home/WEB et a donc echappe a l'homogeneisation pnpm 11.20.0 du parc. A rattraper avec la migration."
+        "jenkinsfile-bibliotheque": "2026-08-05 : 16e pipeline du parc, decouvert lors de l'audit de la refonte — il ne vit pas dans /home/WEB et a echappe a toute l'homogeneisation. NON migre car il n'a ni script `lint` ni sonar-project.properties : l'etape qualite de la bibliotheque tournerait a vide et le marquerait UNSTABLE en permanence. A migrer APRES lui avoir ajoute une config Sonar ; la dispense saute alors d'elle-meme.",
+        "jenkinsfile-pod-partage": "2026-08-05 : 16e pipeline du parc, decouvert lors de l'audit de la refonte — il ne vit pas dans /home/WEB et a echappe a toute l'homogeneisation. NON migre car il n'a ni script `lint` ni sonar-project.properties : l'etape qualite de la bibliotheque tournerait a vide et le marquerait UNSTABLE en permanence. A migrer APRES lui avoir ajoute une config Sonar ; la dispense saute alors d'elle-meme.",
+        "package-manager": "2026-08-05 : 16e pipeline du parc, decouvert lors de l'audit de la refonte — il ne vit pas dans /home/WEB et a echappe a toute l'homogeneisation. NON migre car il n'a ni script `lint` ni sonar-project.properties : l'etape qualite de la bibliotheque tournerait a vide et le marquerait UNSTABLE en permanence. A migrer APRES lui avoir ajoute une config Sonar ; la dispense saute alors d'elle-meme.",
+        "corepack": "2026-08-05 : 16e pipeline du parc, decouvert lors de l'audit de la refonte — il ne vit pas dans /home/WEB et a echappe a toute l'homogeneisation. NON migre car il n'a ni script `lint` ni sonar-project.properties : l'etape qualite de la bibliotheque tournerait a vide et le marquerait UNSTABLE en permanence. A migrer APRES lui avoir ajoute une config Sonar ; la dispense saute alors d'elle-meme.",
+        "images-node": "2026-08-05 : 16e pipeline du parc, decouvert lors de l'audit de la refonte — il ne vit pas dans /home/WEB et a echappe a toute l'homogeneisation. NON migre car il n'a ni script `lint` ni sonar-project.properties : l'etape qualite de la bibliotheque tournerait a vide et le marquerait UNSTABLE en permanence. A migrer APRES lui avoir ajoute une config Sonar ; la dispense saute alors d'elle-meme."
       }
     }
   ],
