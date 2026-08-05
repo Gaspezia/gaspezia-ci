@@ -34,7 +34,15 @@
 // =============================================================================
 def call(Map config = [:]) {
 
-    String gitCredsId     = config.gitCredentialsId     ?: 'github-gaspezia-stacks'
+    // `jenkins-gaspezia` (GitHub App, portee organisation) et NON
+    // `github-gaspezia-stacks` : ce dernier est scope au seul depot gaspezia-stacks
+    // (« Permet de pouvoir modifier le repo gaspezia-stacks »), il renvoie 403 sur
+    // les depots applicatifs — constate au premier build de ci-conformance le
+    // 2026-08-05, ou les 14 clones ont echoue et l'audit a rapporte 0/14 a tort.
+    // Cet audit ne POUSSE rien : il lui faut un acces en LECTURE a tout le parc,
+    // ce qui est exactement le role de la GitHub App. C'est aussi le credential
+    // qu'utilisent deja les jobs build-image-* pour cloner gaspezia-build-config.
+    String gitCredsId     = config.gitCredentialsId     ?: 'jenkins-gaspezia'
     String discordCredsId = config.discordCredentialsId ?: 'discord-webhook'
     String organisation   = config.organisation         ?: 'Gaspezia'
     // Node 24 = la version du gabarit ; l'audit se tient a ce qu'il exige des autres.
