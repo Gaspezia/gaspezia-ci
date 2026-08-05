@@ -55,6 +55,13 @@ def call(Map config = [:]) {
         sonarCpuLimit : r.sonarCpuLimit ?: '3',
         sonarMemLimit : r.sonarMemLimit ?: '2Gi',
         kanikoCpuLimit: r.kanikoCpuLimit?: '4',
+        // Le conteneur kaniko-migrate a ses PROPRES plafonds : gaspezia-minecraft-api le
+        // limite a 1 CPU / 2Gi la ou son kaniko principal est a 2 CPU / 4Gi. Sans ces deux
+        // cles, la bibliotheque ne savait pas exprimer ce depot et sa migration n'aurait
+        // pas ete un non-evenement (elle lui aurait remonte les plafonds en douce).
+        // Par defaut on retombe sur kanikoCpuLimit : c'est ce que faisait le code d'origine.
+        kanikoMigrateCpuLimit: r.kanikoMigrateCpuLimit ?: r.kanikoCpuLimit ?: '4',
+        kanikoMigrateMemLimit: r.kanikoMigrateMemLimit ?: '3Gi',
     ]
 
     // ---- Pod agent ----------------------------------------------------------------------
@@ -68,7 +75,7 @@ def call(Map config = [:]) {
       tty: true
       resources:
         requests: { cpu: "150m", memory: "768Mi", ephemeral-storage: "4Gi" }
-        limits:   { cpu: "${res.kanikoCpuLimit}", memory: "3Gi", ephemeral-storage: "8Gi" }
+        limits:   { cpu: "${res.kanikoMigrateCpuLimit}", memory: "${res.kanikoMigrateMemLimit}", ephemeral-storage: "8Gi" }
       volumeMounts:
         - name: nexus-docker-config
           mountPath: /kaniko/.docker
