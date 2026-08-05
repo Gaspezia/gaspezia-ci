@@ -22,7 +22,8 @@ ce qui casse silencieusement la traçabilité GitOps.
 library identifier: 'gaspezia-ci@main', retriever: modernSCM([$class: 'GitSCMSource',
     remote: 'https://github.com/Gaspezia/gaspezia-ci.git', credentialsId: 'github-gaspezia-stacks'])
 
-gaspeziaAngularWeb(imageName: 'dorangeontraiteur-web', devConfiguration: 'staging')
+gaspeziaAngularWeb(imageName: 'dorangeontraiteur-web', devConfiguration: 'staging',
+                   resources: [jnlpCpuLimit: '500m', nodeCpuLimit: '1', sonarCpuLimit: '1'])
 ```
 
 ### Ce que le step fait
@@ -58,25 +59,29 @@ Mapping branche → build :
 | `devConfiguration` | `staging` | `''` = aucun `--build-arg configuration` |
 | `prodConfiguration` | `production` | idem |
 | `buildArgs` | `[:]` | `--build-arg` supplémentaires |
-| `stacksProdPath` | `k8s/<imageName>/base/kustomization.yaml` | |
-| `stacksStagingPath` | `k8s/<imageName>-staging/base/kustomization.yaml` | |
-| `jnlpCpuLimit` / `nodeCpuLimit` / `sonarCpuLimit` | `500m` / `1` / `1` | voir ci-dessous |
+| `stacksProdKustomization` | `k8s/<imageName>/base/kustomization.yaml` | |
+| `stacksStagingKustomization` | `k8s/<imageName>-staging/base/kustomization.yaml` | |
+| `resources` | `[jnlpCpuLimit:'2', kanikoCpuLimit:'2', nodeCpuLimit:'3', nodeMemLimit:'3Gi', sonarCpuLimit:'3', sonarMemLimit:'2Gi']` | voir ci-dessous |
 | `gitCredentialsId` / `discordCredentialsId` / `sonarBranch` | `github-gaspezia-stacks` / `discord-webhook` / `dev` | |
 
 Exemples réels du parc :
 
 ```groovy
 // front bâti en `production` même sur dev (pas d'environnement staging Angular)
-gaspeziaAngularWeb(imageName: 'gaspezia-asso', devConfiguration: 'production',
-                   jnlpCpuLimit: '2', nodeCpuLimit: '3', sonarCpuLimit: '3')
+gaspeziaAngularWeb(imageName: 'gaspezia-asso', devConfiguration: 'production')
+
+// dorangeonTraiteur : seul dépôt du parc encore à 500m/1/1, déclaré explicitement
+gaspeziaAngularWeb(imageName: 'dorangeontraiteur-web', devConfiguration: 'staging',
+                   resources: [jnlpCpuLimit: '500m', nodeCpuLimit: '1', sonarCpuLimit: '1'])
 ```
 
-**Les `limits` CPU sont paramétrables à dessein.** Elles divergent d'un dépôt à
-l'autre depuis longtemps ; les harmoniser est une décision à prendre à part, pas un
-effet de bord d'un refactoring de CI. Les **`requests`**, elles, sont figées dans la
-bibliothèque : c'est sur elles que Kubernetes ordonnance, et le right-sizing du
-2026-08-05 les a déjà harmonisées (les conteneurs travaillent en séquence, leurs pics
-ne coïncident jamais, mais k8s additionne leurs requests).
+**Seules les `limits` sont surchargeables.** Les défauts sont ceux de six fronts sur
+sept *et* de `gaspeziaNodeApi` ; dorangeonTraiteur est le seul à valoir `500m/1/1` et
+le déclare explicitement — l'anomalie est ainsi visible dans son `Jenkinsfile` plutôt
+que cachée dans un défaut de bibliothèque. Les **`requests`**, elles, sont figées :
+c'est sur elles que Kubernetes ordonnance, et le right-sizing du 2026-08-05 les a déjà
+harmonisées (les conteneurs travaillent en séquence, leurs pics ne coïncident jamais,
+mais k8s additionne leurs requests).
 
 ### Pré-requis dans le dépôt consommateur
 - `Dockerfile` à 3 étages : `build` → `pr` → `runtime`.

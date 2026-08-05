@@ -38,9 +38,13 @@
 //   prodConfiguration  idem sur main et sur les tags                  (defaut: production)
 //                      -> passer '' pour ne PAS emettre le build-arg (front sans configuration)
 //   buildArgs          Map d'ARG supplementaires passes a kaniko      (defaut: [:])
-//   stacksProdPath     kustomization de prod       (defaut: k8s/<imageName>/base/kustomization.yaml)
-//   stacksStagingPath  kustomization de staging    (defaut: k8s/<imageName>-staging/base/kustomization.yaml)
-//   jnlpCpuLimit / nodeCpuLimit / sonarCpuLimit    (defauts: 500m / 1 / 1)
+//   stacksProdKustomization     (defaut: k8s/<imageName>/base/kustomization.yaml)
+//   stacksStagingKustomization  (defaut: k8s/<imageName>-staging/base/kustomization.yaml)
+//   resources          Map de limits surchargeables : jnlpCpuLimit (2),
+//                      kanikoCpuLimit (2), nodeCpuLimit (3), nodeMemLimit (3Gi),
+//                      sonarCpuLimit (3), sonarMemLimit (2Gi). Les `requests`
+//                      ne sont PAS surchargeables : elles seules pesent sur
+//                      l'ordonnancement et sont deja harmonisees sur tout le parc.
 //   sonarBranch        branche analysee par Sonar (CE = mono-branche) (defaut: dev)
 def call(Map config = [:]) {
 
@@ -54,8 +58,11 @@ def call(Map config = [:]) {
     String dockerfile        = config.dockerfile        ?: 'Dockerfile'
     String prTarget          = config.prTarget          ?: 'pr'
     String runtimeTarget     = config.runtimeTarget     ?: 'runtime'
-    String stacksProdPath    = config.stacksProdPath    ?: "k8s/${imageName}/base/kustomization.yaml"
-    String stacksStagingPath = config.stacksStagingPath ?: "k8s/${imageName}-staging/base/kustomization.yaml"
+    // Memes noms de parametres que gaspeziaNodeApi : deux steps de la meme
+    // bibliotheque qui nommeraient differemment la meme chose recreeraient, a
+    // l'interieur de la bibliotheque, la derive qu'elle est censee supprimer.
+    String stacksProdPath    = config.stacksProdKustomization    ?: "k8s/${imageName}/base/kustomization.yaml"
+    String stacksStagingPath = config.stacksStagingKustomization ?: "k8s/${imageName}-staging/base/kustomization.yaml"
     String gitCredentialsId  = config.gitCredentialsId  ?: 'github-gaspezia-stacks'
     String discordCredsId    = config.discordCredentialsId ?: 'discord-webhook'
     String sonarBranch       = config.sonarBranch       ?: 'dev'
@@ -67,15 +74,29 @@ def call(Map config = [:]) {
     String devConfiguration  = config.containsKey('devConfiguration')  ? config.devConfiguration  : 'staging'
     String prodConfiguration = config.containsKey('prodConfiguration') ? config.prodConfiguration : 'production'
 
-    // Limites CPU : volontairement parametrables et calees sur les valeurs
-    // actuelles du depot pilote. Elles divergent d'un depot a l'autre depuis
-    // longtemps ; les harmoniser est une decision a prendre a part, pas un
-    // effet de bord d'un refactoring de CI (on ne change qu'une chose a la fois).
-    // Les REQUESTS, elles, sont figees ici : c'est sur elles que Kubernetes
-    // ordonnance, et le right-sizing du 2026-08-05 les a deja harmonisees.
-    String jnlpCpuLimit  = config.jnlpCpuLimit  ?: '500m'
-    String nodeCpuLimit  = config.nodeCpuLimit  ?: '1'
-    String sonarCpuLimit = config.sonarCpuLimit ?: '1'
+    // Ressources : `requests` = ce qui pese sur l'ordonnancement k8s, `limits` =
+    // plafond qui ne reserve rien. D'ou des requests modestes et des limits
+    // hautes. Les requests sont figees ici (le right-sizing du 2026-08-05 les a
+    // deja harmonisees sur tout le parc) ; seules les limits sont surchargeables,
+    // car elles divergent encore d'un depot a l'autre. Les defauts sont ceux de
+    // six fronts sur sept ET de gaspeziaNodeApi ; dorangeonTraiteur est le seul
+    // a valoir 500m/1/1 et le declare explicitement, ce qui rend l'anomalie
+    // visible au lieu de la cacher dans un defaut de bibliotheque.
+    // NB: pas d'operateur `<<` ni de `+` sur Map — le bac a sable Groovy de
+    // Jenkins les rejette selon la version du plugin script-security. Un `?:`
+    // par cle, explicite et sur.
+    Map r = (Map) (config.resources ?: [:])
+    Map res = [
+        jnlpCpuLimit  : r.jnlpCpuLimit   ?: '2',
+        kanikoCpuLimit: r.kanikoCpuLimit ?: '2',
+        nodeCpuLimit  : r.nodeCpuLimit   ?: '3',
+        // 3Gi et non 2Gi : mesure Prometheus sur 7 j, pic reel du conteneur
+        // `node` a 2043 Mi pour une limite de 2048 Mi — il touchait le plafond,
+        // OOMKill le 2026-08-05.
+        nodeMemLimit  : r.nodeMemLimit   ?: '3Gi',
+        sonarCpuLimit : r.sonarCpuLimit  ?: '3',
+        sonarMemLimit : r.sonarMemLimit  ?: '2Gi',
+    ]
 
     // Equivalent du `options { disableConcurrentBuilds() }` declaratif : deux
     // builds simultanes de la meme branche se marcheraient dessus sur le push
@@ -87,12 +108,7 @@ def call(Map config = [:]) {
     // par un WARNING (constate sur DorangeonTraiteur/PR-20 #1). Il est de toute
     // facon inutile : hors d'un bloc `container(...)`, un step s'execute deja
     // dans le conteneur `jnlp`, qui est l'agent lui-meme.
-    podTemplate(cloud: 'k8s', yaml: agentPodYaml(
-        partOf: partOf,
-        jnlpCpuLimit: jnlpCpuLimit,
-        nodeCpuLimit: nodeCpuLimit,
-        sonarCpuLimit: sonarCpuLimit
-    )) {
+    podTemplate(cloud: 'k8s', yaml: agentPodYaml(partOf, res)) {
         node(POD_LABEL) {
             // Equivalent du bloc `environment {}` : ces variables sont lues par
             // les scripts shell des stages.
@@ -207,14 +223,14 @@ def call(Map config = [:]) {
 // puis node, puis sonar). Leurs pics ne coincident jamais, mais Kubernetes
 // ordonnance sur la SOMME des requests -- d'ou des requests deliberement
 // modestes et des limits hautes (right-sizing du 2026-08-05).
-String agentPodYaml(Map c) {
+String agentPodYaml(String partOf, Map res) {
     return """\
 apiVersion: v1
 kind: Pod
 metadata:
   labels:
     app.kubernetes.io/component: jenkins-build
-    app.kubernetes.io/part-of: ${c.partOf}
+    app.kubernetes.io/part-of: ${partOf}
 spec:
   serviceAccountName: jenkins-agent
   containers:
@@ -222,14 +238,14 @@ spec:
       image: nexus.gaspezia.lan/docker-private/jenkins-inbound-agent:gaspezia
       resources:
         requests: { cpu: "100m", memory: "256Mi" }
-        limits:   { cpu: "${c.jnlpCpuLimit}", memory: "512Mi" }
+        limits:   { cpu: "${res.jnlpCpuLimit}", memory: "512Mi" }
     - name: kaniko
       image: gcr.io/kaniko-project/executor:debug
       command: ["/busybox/cat"]
       tty: true
       resources:
         requests: { cpu: "250m", memory: "1536Mi", ephemeral-storage: "4Gi" }
-        limits:   { cpu: "2", memory: "4Gi", ephemeral-storage: "8Gi" }
+        limits:   { cpu: "${res.kanikoCpuLimit}", memory: "4Gi", ephemeral-storage: "8Gi" }
       volumeMounts:
         - name: nexus-docker-config
           mountPath: /kaniko/.docker
@@ -246,14 +262,14 @@ spec:
         # a 2043 Mi pour une limite de 2048 Mi — il touchait le plafond, et un
         # OOMKill s'est produit le 2026-08-05. La `request` reste inchangee :
         # elle seule pese sur l'ordonnancement, la limite ne reserve rien.
-        limits:   { cpu: "${c.nodeCpuLimit}", memory: "3Gi" }
+        limits:   { cpu: "${res.nodeCpuLimit}", memory: "${res.nodeMemLimit}" }
     - name: sonar-scanner
       image: sonarsource/sonar-scanner-cli:latest
       command: ["cat"]
       tty: true
       resources:
         requests: { cpu: "150m", memory: "768Mi" }
-        limits:   { cpu: "${c.sonarCpuLimit}", memory: "2Gi" }
+        limits:   { cpu: "${res.sonarCpuLimit}", memory: "${res.sonarMemLimit}" }
   volumes:
     - name: nexus-docker-config
       secret:
