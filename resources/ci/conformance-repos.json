@@ -1,0 +1,107 @@
+{
+  "_pourquoi": "Le gabarit du parc, en DONNEE et non en code : relever pnpm ou Node se fait ici, en une ligne, sans relire une regex. Ce fichier est aussi la liste de reference des depots applicatifs — un depot qui n'y figure pas n'est audite par personne.",
+  "organisation": "Gaspezia",
+  "gabarit": {
+    "packageManager": "pnpm@11.20.0",
+    "_packageManager": "pnpm 11.20.0, declare dans package.json ET obtenu par corepack dans le Dockerfile. Depuis pnpm 10.23 le champ `pnpm` de package.json n'est PLUS lu : les reglages (allowBuilds, overrides) vivent dans pnpm-workspace.yaml.",
+    "imagesNodeAutorisees": [
+      "node:24-slim",
+      "node-gaspezia:24",
+      "node-gaspezia-migrate:24"
+    ],
+    "_imagesNodeAutorisees": "Node 24 = Active LTS (Krypton, maintenue jusqu'en avril 2028) ; PAS Node 26, encore Current. `node-gaspezia:24` est l'image de base interne (openssl/ca-certificates/wget deja installes) qui sort les apt-get du chemin de build applicatif : 117 s par build et par API, mesurees le 2026-08-05. Le prefixe de registre n'est pas juge, seuls le nom et le tag le sont : les depots tirent via le miroir Nexus.",
+    "memoireMinConteneurNode": "3Gi",
+    "_memoireMinConteneurNode": "Mesure Prometheus sur 7 j : pic reel du conteneur `node` a 2043 Mi pour une limite de 2048 Mi. Il touchait son plafond -> OOMKill le 2026-08-05. La `request` reste modeste (768Mi) : k8s ordonnance sur les requests, la limite ne reserve rien.",
+    "stepsBibliotheque": [
+      "gaspeziaNodeApi",
+      "gaspeziaAngularWeb"
+    ],
+    "_stepsBibliotheque": "Les deux steps de cette bibliotheque qui portent un pipeline COMPLET, pod d'agent compris. Un Jenkinsfile applicatif doit en appeler un — et ne rien redefinir par-dessus."
+  },
+  "depots": [
+    {
+      "nom": "bot-discord-api-v2",
+      "type": "api",
+      "dispenses": {}
+    },
+    {
+      "nom": "bot-twitch-api",
+      "type": "api",
+      "dispenses": {}
+    },
+    {
+      "nom": "email-sender-api",
+      "type": "api",
+      "dispenses": {}
+    },
+    {
+      "nom": "gaspezia-members-api-v2",
+      "type": "api",
+      "dispenses": {}
+    },
+    {
+      "nom": "gaspezia-minecraft-api",
+      "type": "api",
+      "dispenses": {}
+    },
+    {
+      "nom": "mon-labo-gourmand-api",
+      "type": "api",
+      "dispenses": {}
+    },
+    {
+      "nom": "bot-discord-web",
+      "type": "web",
+      "dispenses": {}
+    },
+    {
+      "nom": "bot-twitch-web",
+      "type": "web",
+      "dispenses": {}
+    },
+    {
+      "nom": "dorangeonTraiteur",
+      "type": "web",
+      "dispenses": {}
+    },
+    {
+      "nom": "gaspezia-asso-web",
+      "type": "web",
+      "dispenses": {}
+    },
+    {
+      "nom": "gaspezia-members-web",
+      "type": "web",
+      "dispenses": {}
+    },
+    {
+      "nom": "gaspezia-minecraft-web",
+      "type": "web",
+      "dispenses": {}
+    },
+    {
+      "nom": "mon-labo-gourmand-web",
+      "type": "web",
+      "dispenses": {}
+    },
+    {
+      "nom": "tanguy-penin-web",
+      "type": "web",
+      "dispenses": {
+        "stepsBibliotheque": "2026-08-05 : 16e pipeline du parc, decouvert lors de l'audit de la refonte. NON migre vers gaspeziaAngularWeb car il n'a ni script `lint` ni sonar-project.properties : l'etape qualite de la bibliotheque tournerait a vide et le marquerait UNSTABLE en permanence. A migrer APRES lui avoir ajoute une config Sonar.",
+        "packageManager": "2026-08-05 : encore en pnpm@10.15.1. Ce depot ne vit pas dans /home/WEB et a donc echappe a l'homogeneisation pnpm 11.20.0 du parc. A rattraper avec la migration."
+      }
+    }
+  ],
+  "_dispenses": "Une dispense est un ecart CONNU et assume : \"dispenses\": { \"<id-de-regle>\": \"raison datee\" }. Elle laisse l'ecart VISIBLE dans le rapport mais ne fait plus echouer l'audit. Volontairement nominative et en clair ici : une dispense doit se voir en relecture de PR, sinon c'est une desactivation silencieuse du controle. Aucune au 2026-08-05.",
+  "horsPerimetre": [
+    {
+      "nom": "gaspezia-auth",
+      "pourquoi": "SDK npm publie sur Nexus, pas une application conteneurisee : ni image, ni bump gaspezia-stacks. Ni gaspeziaNodeApi ni gaspeziaAngularWeb ne s'y appliquent."
+    },
+    {
+      "nom": "Wiki",
+      "pourquoi": "site de documentation (retype) sans package.json ni pnpm : les regles pnpm/corepack n'ont aucun sens pour lui."
+    }
+  ]
+}
