@@ -110,6 +110,15 @@ pourquoi on ne le fait pas, et un `Jenkinsfile` migré cite `podTemplate` dans s
 en-tête. Une règle qui ne filtrerait pas les commentaires ferait échouer les
 dépôts **corrects**.
 
+Il vérifie enfin que le rapport reste **postable sous charge** (cas à 30 dépôts
+en écart). Discord ne tronque pas un embed trop gros : il **rejette** la requête
+(HTTP 400). Sans ce garde-fou, on perdrait toute notification précisément le jour
+où le parc est au plus mal — le rapport le plus long est le plus alarmant. Mesuré
+le 2026-08-05 sur l'état réel : **5635 caractères pour 6000 permis**, il ne
+restait presque plus de marge. Le moteur coupe donc à 5800 et **dit** combien de
+dépôts n'ont pas tenu, plutôt que de laisser croire que le parc va mieux qu'il ne
+va.
+
 Il tourne **avant** l'audit, à chaque build. S'il échoue, l'audit ne tourne pas
 et Discord reçoit « l'audit n'a pas pu s'exécuter » — parce que **l'absence de
 rapport n'est pas un parc conforme**.

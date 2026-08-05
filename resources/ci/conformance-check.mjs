@@ -350,26 +350,59 @@ writeFileSync(SORTIE, JSON.stringify({
 const enEcart = resultats.filter((r) => !r.conforme);
 const derive = enEcart.length > 0 || ecartsBibliotheque.length > 0;
 const tronque = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-const champs = enEcart.slice(0, 20).map((r) => ({
-  name: `❌ ${r.depot}`,
-  value: tronque(r.ecarts.filter((e) => !e.dispense).map((e) => `• \`${e.regle}\` : ${e.message}`).join('\n'), 1024),
-}));
-if (ecartsBibliotheque.length) {
-  champs.unshift({ name: '❌ gaspezia-ci (bibliotheque)', value: tronque(ecartsBibliotheque.map((e) => `• ${e}`).join('\n'), 1024) });
+
+const titre = `${derive ? '❌' : '✅'} Conformité du parc au gabarit CI — ${conformes}/${resultats.length} dépôts conformes`;
+const description = derive
+  ? "Un dépôt **s'écarte du gabarit partagé**. Rien n'est bloqué côté développeurs : ce rapport est le seul signal."
+  : `Les ${resultats.length} dépôts applicatifs suivent le gabarit partagé (bibliothèque \`gaspezia-ci\`, pnpm, Node, mémoire de l'agent).`;
+const pied = 'Audit périodique — informatif pour les devs, rouge pour la CI';
+
+// La bibliotheque d'abord (elle concerne TOUS les depots migres), puis les
+// depots. Chaque valeur est bornee a 1024, limite d'un champ Discord.
+const details = [
+  ...(ecartsBibliotheque.length
+    ? [{ name: '❌ gaspezia-ci (bibliothèque)', value: tronque(ecartsBibliotheque.map((e) => `• ${e}`).join('\n'), 1024) }]
+    : []),
+  ...enEcart.map((r) => ({
+    name: `❌ ${r.depot}`,
+    value: tronque(r.ecarts.filter((e) => !e.dispense).map((e) => `• \`${e.regle}\` : ${e.message}`).join('\n'), 1024),
+  })),
+];
+
+// Discord refuse un embed de plus de 6000 caracteres au total (titre +
+// description + noms et valeurs des champs + footer) et de plus de 25 champs.
+// Au-dela, il ne TRONQUE pas : il REJETTE la requete (HTTP 400). On perdrait
+// donc toute notification precisement le jour ou le parc est au plus mal — le
+// rapport le plus long est le plus alarmant. Mesure du 2026-08-05 sur l'etat
+// reel (12 depots + la bibliotheque en ecart) : 5635 caracteres, soit 94 % du
+// plafond -- il ne restait presque plus de marge. On coupe donc a 5800 (200
+// caracteres de reserve sous la limite dure), en disant explicitement ce qui a
+// saute plutot qu'en laissant croire que le parc va mieux qu'il ne va.
+const PLAFOND = 5800;
+let omis = 0;
+const resume = () => (omis === 0 ? [] : [{
+  name: `… et ${omis} dépôt(s) de plus en écart`,
+  value: 'Détail non tenu dans un message Discord. Rapport complet : log du build et artefact `conformance-report.json`.',
+}]);
+const taille = () => titre.length + description.length + pied.length
+  + [...details, ...resume()].reduce((s, f) => s + f.name.length + f.value.length, 0);
+// On garde toujours au moins un champ detaille : un rapport qui ne nomme aucun
+// depot n'aiderait personne.
+while (details.length > 1 && (taille() > PLAFOND || details.length + resume().length > 25)) {
+  details.pop();
+  omis += 1;
 }
-if (enEcart.length > 20) champs.push({ name: '…', value: `${enEcart.length - 20} depot(s) en ecart non detailles ici (voir le log du build)` });
+const champs = [...details, ...resume()];
 
 writeFileSync('discord-payload.json', JSON.stringify({
   username: 'Conformité CI',
   embeds: [{
-    title: `${derive ? '❌' : '✅'} Conformité du parc au gabarit CI — ${conformes}/${resultats.length} dépôts conformes`,
-    description: derive
-      ? "Un dépôt **s'écarte du gabarit partagé**. Rien n'est bloqué côté développeurs : ce rapport est le seul signal."
-      : `Les ${resultats.length} dépôts applicatifs suivent le gabarit partagé (bibliothèque \`gaspezia-ci\`, pnpm, Node, mémoire de l'agent).`,
+    title: titre,
+    description,
     url: process.env.BUILD_URL,
     color: derive ? 15158332 : 3066993,
     fields: champs,
-    footer: { text: 'Audit périodique — informatif pour les devs, rouge pour la CI' },
+    footer: { text: pied },
   }],
 }));
 

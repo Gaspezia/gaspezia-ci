@@ -16,11 +16,16 @@
 // et un Jenkinsfile migre cite `podTemplate` dans son en-tete. Une regle qui ne
 // filtrerait pas les commentaires ferait echouer les depots CORRECTS.
 //
+// Il verifie enfin que le rapport reste POSTABLE sous charge : Discord ne
+// tronque pas un embed trop gros, il REJETTE la requete (HTTP 400). Sans ce
+// garde-fou on perdrait toute notification precisement le jour ou le parc est au
+// plus mal, puisque le rapport le plus long est le plus alarmant.
+//
 // Il lance le vrai script en sous-processus (et non par import) : c'est la CLI
 // reellement utilisee par le pipeline qui est testee, arguments compris.
 // Exit 0 = les regles mordent encore ; exit 1 = le verrou est casse.
 // =============================================================================
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -119,6 +124,40 @@ const attendues = ['jenkinsfile-bibliotheque', 'jenkinsfile-pod-partage', 'packa
 
 const echecs = [];
 if (run.status !== 1) echecs.push(`exit ${run.status} au lieu de 1 : une derive doit faire ECHOUER l'audit`);
+
+// ---- le rapport Discord doit rester POSTABLE, surtout quand il est long ------
+// Discord ne tronque pas un embed trop gros : il REJETTE la requete (HTTP 400).
+// On perdrait donc toute notification precisement le jour ou le parc est au plus
+// mal — le rapport le plus long est le plus alarmant. Mesure du 2026-08-05 sur
+// l'etat reel du parc (12 depots en ecart) : 5635 caracteres pour 6000 permis.
+// Ce cas de charge (30 depots en ecart) verifie que le budget tient quand meme.
+{
+  const stress = mkdtempSync(join(tmpdir(), 'conformite-charge-'));
+  const noms = Array.from({ length: 30 }, (_, i) => `depot-casse-${i}`);
+  for (const n of noms) {
+    mkdirSync(join(stress, n), { recursive: true });
+    for (const f of ['Jenkinsfile', 'package.json', 'Dockerfile', 'pnpm-workspace.yaml']) {
+      writeFileSync(join(stress, n, f), readFileSync(join(racine, 'depot-casse', f)));
+    }
+  }
+  const manifesteStress = join(stress, 'manifeste.json');
+  writeFileSync(manifesteStress, JSON.stringify({
+    gabarit: JSON.parse(readFileSync(manifeste, 'utf8')).gabarit,
+    depots: noms.map((n) => ({ nom: n, type: 'api', dispenses: {} })),
+  }));
+  spawnSync(process.execPath, [SCRIPT, '--racine', stress, '--manifeste', manifesteStress,
+    '--sortie', join(stress, 'rapport.json')], { cwd: stress, encoding: 'utf8' });
+
+  const embed = JSON.parse(readFileSync(join(stress, 'discord-payload.json'), 'utf8')).embeds[0];
+  const caracteres = embed.title.length + embed.description.length + embed.footer.text.length
+    + embed.fields.reduce((s, f) => s + f.name.length + f.value.length, 0);
+  if (caracteres > 6000) echecs.push(`embed Discord a ${caracteres} caracteres (limite 6000) : le webhook repondrait 400 et personne ne serait prevenu`);
+  if (embed.fields.length > 25) echecs.push(`embed Discord a ${embed.fields.length} champs (limite 25)`);
+  if (embed.fields.some((f) => f.value.length > 1024)) echecs.push('un champ Discord depasse 1024 caracteres');
+  if (!embed.fields.some((f) => /de plus en écart/.test(f.name))) echecs.push('30 depots en ecart mais aucun champ ne dit combien ont ete omis : le rapport ment par omission');
+  rmSync(stress, { recursive: true, force: true });
+}
+
 if (!conforme.conforme) echecs.push(`le depot conforme est declare en ecart : ${JSON.stringify(conforme.ecarts)}`);
 for (const r of attendues) if (!declenchees.has(r)) echecs.push(`la regle \`${r}\` ne mord plus (aucun ecart sur un depot qui la viole)`);
 if (rapport.bibliotheque.length) echecs.push(`faux positif sur les defauts de la bibliotheque : ${rapport.bibliotheque.join(' ; ')}`);
