@@ -12,7 +12,7 @@
 ## `gaspeziaNodeApi()` — pipeline CD complet
 
 Remplace les ~295 lignes de Jenkinsfile dupliquées à l'identique dans `bot-twitch-api`,
-`mon-labo-gourmand-api`, `gaspezia-members-api-v2`, `email-sender-api`… Le Jenkinsfile du
+`mon-labo-gourmand-api`, `gaspezia-members-api`, `email-sender-api`… Le Jenkinsfile du
 repo consommateur se réduit à :
 
 ```groovy
