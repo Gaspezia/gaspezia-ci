@@ -1,0 +1,5 @@
+# Sorties du verrou de conformite, produites dans le workspace du job et par un
+# lancement local de conformance-check.mjs. Ce sont des artefacts, pas des sources.
+conformance-report.json
+discord-payload.json
+parc/

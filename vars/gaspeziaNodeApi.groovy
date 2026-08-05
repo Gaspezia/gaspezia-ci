@@ -1,6 +1,6 @@
 // Pipeline CD complet des API Node/NestJS Gaspezia (agent k8s + Kaniko + bump gaspezia-stacks
 // + notification Discord). Remplace les ~295 lignes de Jenkinsfile dupliquees a l'identique
-// dans bot-twitch-api, mon-labo-gourmand-api, gaspezia-members-api-v2, email-sender-api...
+// dans bot-twitch-api, mon-labo-gourmand-api, gaspezia-members-api, email-sender-api...
 //
 // POURQUOI une bibliotheque : ces 4 Jenkinsfile ne divergeaient que par le nom d'image et
 // quelques ressources, mais chaque correctif (OOMKill du conteneur `node` le 2026-08-05,
