@@ -82,7 +82,12 @@ def call(Map config = [:]) {
     // gaspezia-stacks.
     properties([disableConcurrentBuilds()])
 
-    podTemplate(cloud: 'k8s', defaultContainer: 'jnlp', yaml: agentPodYaml(
+    // Pas de `defaultContainer` ici : contrairement au `agent { kubernetes {} }`
+    // declaratif, le step podTemplate ne connait pas ce parametre et le signale
+    // par un WARNING (constate sur DorangeonTraiteur/PR-20 #1). Il est de toute
+    // facon inutile : hors d'un bloc `container(...)`, un step s'execute deja
+    // dans le conteneur `jnlp`, qui est l'agent lui-meme.
+    podTemplate(cloud: 'k8s', yaml: agentPodYaml(
         partOf: partOf,
         jnlpCpuLimit: jnlpCpuLimit,
         nodeCpuLimit: nodeCpuLimit,
