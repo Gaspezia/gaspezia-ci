@@ -341,38 +341,14 @@ spec:
                 when { expression { return env.PIPELINE_MODE in ['dev', 'release'] } }
                 steps {
                     script {
-                        def targetFile = (env.PIPELINE_MODE == 'release') ? stacksProd : stacksStaging
-                        def newTag     = (env.PIPELINE_MODE == 'release') ? env.GIT_TAG : env.DOCKER_TAG
-                        withCredentials([usernamePassword(
-                            credentialsId: gitCredsId,
-                            usernameVariable: 'GIT_USERNAME',
-                            passwordVariable: 'GIT_TOKEN'
-                        )]) {
-                            sh """
-                              set -e
-                              rm -rf gaspezia-stacks
-                              git clone https://\${GIT_USERNAME}:\${GIT_TOKEN}@github.com/Gaspezia/gaspezia-stacks.git
-                              cd gaspezia-stacks
-
-                              if [ ! -f "${targetFile}" ]; then
-                                echo "Skipping: ${targetFile} does not exist"
-                                exit 0
-                              fi
-
-                              sed -i "s|newTag: .*|newTag: ${newTag}|" "${targetFile}"
-
-                              git config user.name "Jenkins"
-                              git config user.email "jenkins@gaspezia.lan"
-                              git add ${targetFile}
-
-                              if git diff --cached --quiet; then
-                                echo "No change detected in ${targetFile}"
-                              else
-                                git commit -m "chore(${imageName}): bump image to ${newTag} (${env.PIPELINE_MODE})"
-                                git push origin main
-                              fi
-                            """
-                        }
+                        // Le bump est delegue a `gaspeziaStacksBump` : il porte la reprise
+                        // sur course au push, que trois pipelines dupliquaient sans l'avoir.
+                        gaspeziaStacksBump(
+                            targetFile: (env.PIPELINE_MODE == 'release') ? stacksProd : stacksStaging,
+                            newTag:     (env.PIPELINE_MODE == 'release') ? env.GIT_TAG : env.DOCKER_TAG,
+                            imageName:  imageName,
+                            gitCredentialsId: gitCredsId
+                        )
                     }
                 }
             }

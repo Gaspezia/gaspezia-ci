@@ -426,40 +426,16 @@ String kanikoBuildArgs(String configuration, Map extraBuildArgs) {
 }
 
 // Bump du tag d'image dans gaspezia-stacks : c'est CE commit qui declenche le
-// deploiement ArgoCD. Le `sed` ne touche que la ligne newTag du kustomization
-// cible ; l'absence du fichier n'est pas une erreur (app pas encore deployee).
+// deploiement ArgoCD. La mecanique (clone, garde-fou multi-services, reprise sur
+// course au push) vit dans `gaspeziaStacksBump` — elle etait dupliquee a trois
+// endroits, et le correctif de la course du 2026-08-07 devait s'appliquer aux trois.
 void updateStacks(String targetFile, String newTag, String imageName, String gitCredentialsId) {
-    String pipelineMode = env.PIPELINE_MODE
-    withCredentials([usernamePassword(
-        credentialsId: gitCredentialsId,
-        usernameVariable: 'GIT_USERNAME',
-        passwordVariable: 'GIT_TOKEN'
-    )]) {
-        sh """
-          set -e
-          rm -rf gaspezia-stacks
-          git clone https://\${GIT_USERNAME}:\${GIT_TOKEN}@github.com/Gaspezia/gaspezia-stacks.git
-          cd gaspezia-stacks
-
-          if [ ! -f "${targetFile}" ]; then
-            echo "Skipping: ${targetFile} does not exist"
-            exit 0
-          fi
-
-          sed -i "s|newTag: .*|newTag: ${newTag}|" "${targetFile}"
-
-          git config user.name "Jenkins"
-          git config user.email "jenkins@gaspezia.lan"
-          git add ${targetFile}
-
-          if git diff --cached --quiet; then
-            echo "No change detected in ${targetFile}"
-          else
-            git commit -m "chore(${imageName}): bump image to ${newTag} (${pipelineMode})"
-            git push origin main
-          fi
-        """
-    }
+    gaspeziaStacksBump(
+        targetFile: targetFile,
+        newTag: newTag,
+        imageName: imageName,
+        gitCredentialsId: gitCredentialsId
+    )
 }
 
 // Notification Discord en NATIF (POST webhook via curl) — pas de dependance au
