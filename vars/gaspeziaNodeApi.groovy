@@ -81,7 +81,9 @@ def call(Map config = [:]) {
           mountPath: /kaniko/.docker
         - name: gaspezia-ca
           mountPath: /kaniko/ssl/certs/additional-ca-cert-bundle.crt
-          subPath: ca.crt"""
+          subPath: ca.crt
+        - name: nexus-npmrc
+          mountPath: /kaniko/nexus-npmrc"""
 
     String podYaml = """
 apiVersion: v1
@@ -110,14 +112,43 @@ spec:
           mountPath: /kaniko/.docker
         - name: gaspezia-ca
           mountPath: /kaniko/ssl/certs/additional-ca-cert-bundle.crt
-          subPath: ca.crt${migrateContainer}
+          subPath: ca.crt
+        - name: nexus-npmrc
+          mountPath: /kaniko/nexus-npmrc${migrateContainer}
     - name: node
       image: ${nodeImage}
       command: ["cat"]
       tty: true
+      # C'est ce conteneur qui execute `pnpm install --frozen-lockfile` a
+      # l'etape Lint & Test (gaspeziaNodeQuality). Pour un depot qui declare une
+      # dependance @gaspezia/*, il lui faut la CA interne ET l'identifiant de
+      # lecture, sans quoi l'install echoue en UNABLE_TO_VERIFY_LEAF_SIGNATURE
+      # puis en 401 — et comme l'etape est enveloppee dans un catchError, elle
+      # ne rougit pas le build : elle le rend UNSTABLE. On lit les logs.
+      #  * NODE_EXTRA_CA_CERTS AJOUTE la CA Gaspezia aux racines compilees dans
+      #    Node. update-ca-certificates ne suffirait pas : il alimente le
+      #    magasin d'OpenSSL, pas celui de Node, et c'est Node que pnpm utilise.
+      #    A ne surtout pas remplacer par `cafile=` dans un .npmrc : cafile
+      #    REMPLACE le magasin entier et casserait tout tirage depuis npmjs.
+      #  * NPM_CONFIG_USERCONFIG remplace le .npmrc UTILISATEUR (~/.npmrc, qui
+      #    n'existe pas dans l'image node officielle : rien n'est donc perdu).
+      #    Il ne remplace PAS le .npmrc du DEPOT, qui porte la redirection de
+      #    scope @gaspezia et continue d'etre lu — verifie avec pnpm 11.
+      # Secret absent => le fichier n'existe pas => pnpm l'ignore sans erreur
+      # ni avertissement. Les quatre autres API ne voient aucune difference.
+      env:
+        - name: NODE_EXTRA_CA_CERTS
+          value: /etc/gaspezia/ca/ca.crt
+        - name: NPM_CONFIG_USERCONFIG
+          value: /etc/gaspezia/npmrc/.npmrc
       resources:
         requests: { cpu: "200m", memory: "768Mi" }
         limits:   { cpu: "${res.nodeCpuLimit}", memory: "${res.nodeMemLimit}" }
+      volumeMounts:
+        - name: gaspezia-ca
+          mountPath: /etc/gaspezia/ca
+        - name: nexus-npmrc
+          mountPath: /etc/gaspezia/npmrc
     - name: sonar-scanner
       image: sonarsource/sonar-scanner-cli:latest
       command: ["cat"]
@@ -136,6 +167,37 @@ spec:
         name: gaspezia-ca
         items:
           - { key: ca.crt, path: ca.crt }
+    # Fragment de .npmrc donnant l'acces en LECTURE au depot npm-private du
+    # Nexus. Consomme par le seul depot qui tire des paquets @gaspezia/*.
+    #
+    # A CREER A LA MAIN dans le namespace des agents (jenkins-builds) :
+    #   kubectl -n jenkins-builds create secret generic nexus-npmrc --from-file=.npmrc=./fragment.npmrc
+    #
+    # Contenu attendu de ./fragment.npmrc : UNE ligne, cle SCOPEE au registre,
+    # dans l'une des deux formes acceptees par Nexus —
+    #   //nexus.gaspezia.lan/repository/npm-private/:_authToken=NpmToken.xxxxx
+    #   //nexus.gaspezia.lan/repository/npm-private/:_auth=<base64 user:motdepasse>
+    #
+    # La cle du Secret DOIT s'appeler .npmrc : c'est ce nom que le conteneur
+    # node lit via NPM_CONFIG_USERCONFIG, et que les Dockerfiles bot-twitch
+    # cherchent en premier dans le repertoire monte sur /kaniko/nexus-npmrc.
+    #
+    # NE JAMAIS ecrire la cle sans son prefixe de registre (`_authToken=...`
+    # tout court) : pnpm la rattache alors d'office a registry.npmjs.org, et le
+    # jeton Nexus partirait vers le registre PUBLIC — depuis les cinq pipelines.
+    #
+    # `optional: true` n'est pas une precaution de style : le Secret n'existe
+    # pas encore, et quatre des cinq API n'en auront jamais besoin. Un volume de
+    # Secret non optionnel bloquerait leurs pods en ContainerCreating. Meme
+    # raison pour l'absence de `subPath` cote montage (contrairement au style
+    # employe plus haut pour gaspezia-ca, configMap REQUIS et toujours present) :
+    # un subPath sur un Secret optionnel ABSENT fait echouer le montage, car il
+    # reference un fichier qui n'existe pas. Monte en repertoire, un Secret
+    # absent donne simplement un repertoire vide.
+    - name: nexus-npmrc
+      secret:
+        secretName: nexus-npmrc
+        optional: true
 """
 
     pipeline {

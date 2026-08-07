@@ -27,6 +27,12 @@
 // sonar-project.properties, et les credentials Jenkins github-gaspezia-stacks,
 // discord-webhook, sonarqube-token.
 //
+// Acces au Nexus npm : le pod monte, EN OPTIONNEL, le Secret `nexus-npmrc` du
+// namespace `jenkins-builds` (fragment d'authentification au depot npm-private).
+// Rien a declarer cote depot : un front qui ne consomme aucun paquet
+// `@gaspezia/*` ne le lit jamais, et un Secret absent donne un repertoire vide
+// sans bloquer le pod. Detail et preuve d'inertie au bloc `volumes` ci-dessous.
+//
 // Parametres (tous optionnels sauf imageName) :
 //   imageName          (REQUIS) nom de l'image ET racine des chemins gaspezia-stacks
 //   partOf             label app.kubernetes.io/part-of du pod        (defaut: imageName)
@@ -252,10 +258,46 @@ spec:
         - name: gaspezia-ca
           mountPath: /kaniko/ssl/certs/additional-ca-cert-bundle.crt
           subPath: ca.crt
+        # Jeton de lecture Nexus, pour les depots dont le Dockerfile installe des
+        # paquets `@gaspezia/*`. Le chemin est celui que lit leur `RUN`
+        # (`mount=/kaniko/nexus-npmrc`) ; les autres depots ne lisent rien ici.
+        # Sous `/kaniko/` a dessein : Kaniko n'implemente pas
+        # `RUN --mount=type=secret` (il parse la directive et l'ignore), mais il
+        # ne capture jamais `/kaniko/` dans ses snapshots — le jeton est donc
+        # lisible par le `RUN` sans jamais entrer dans une couche d'image.
+        # Montage EN REPERTOIRE, jamais en `subPath` : un `subPath` sur un Secret
+        # optionnel absent fait echouer la creation du conteneur et laisserait en
+        # ContainerCreating TOUS les pipelines qui partagent ce template.
+        - name: nexus-npmrc
+          mountPath: /kaniko/nexus-npmrc
     - name: node
       image: node:22-bookworm
       command: ["cat"]
       tty: true
+      # Le conteneur `node` execute `pnpm install --frozen-lockfile`
+      # (gaspeziaNodeQuality) : memes deux besoins que l'image de build, pour les
+      # memes raisons. Les deux variables sont INERTES pour un depot qui ne
+      # consomme aucun paquet `@gaspezia/*` (cf. bloc `volumes`).
+      env:
+        # Node n'utilise PAS le magasin de certificats du systeme : sans cette
+        # variable, tout appel a nexus.gaspezia.lan echoue en
+        # UNABLE_TO_VERIFY_LEAF_SIGNATURE alors que `curl` passe sans broncher.
+        # `update-ca-certificates` ne suffirait pas — il alimente OpenSSL, pas le
+        # magasin compile dans Node, qui est celui que pnpm utilise.
+        # NODE_EXTRA_CA_CERTS *ajoute* aux racines : une install depuis npmjs est
+        # inchangee. Surtout pas `cafile=` dans un .npmrc, qui les *remplace*.
+        # Meme chemin que le Jenkinsfile de gaspezia-auth, meme image.
+        - name: NODE_EXTRA_CA_CERTS
+          value: /etc/ssl/gaspezia/ca.crt
+        # Identifiant Nexus. USERCONFIG et non un `.npmrc` ecrit dans le
+        # workspace : il remplace le fichier UTILISATEUR (`/root/.npmrc`, qui
+        # n'existe pas dans node:22-bookworm), pas le `.npmrc` du depot — lequel
+        # porte, chez les consommateurs du SDK, la redirection du scope
+        # `@gaspezia` et doit continuer a etre lu. Les deux couches se cumulent.
+        # Fichier absent = aucune erreur : pnpm ignore un userconfig introuvable,
+        # exactement comme un `~/.npmrc` inexistant.
+        - name: NPM_CONFIG_USERCONFIG
+          value: /etc/gaspezia/npm/.npmrc
       resources:
         requests: { cpu: "200m", memory: "768Mi" }
         # 3Gi et non 2Gi : mesure Prometheus sur 7 j, pic reel du conteneur `node`
@@ -263,6 +305,11 @@ spec:
         # OOMKill s'est produit le 2026-08-05. La `request` reste inchangee :
         # elle seule pese sur l'ordonnancement, la limite ne reserve rien.
         limits:   { cpu: "${res.nodeCpuLimit}", memory: "${res.nodeMemLimit}" }
+      volumeMounts:
+        - name: gaspezia-ca
+          mountPath: /etc/ssl/gaspezia
+        - name: nexus-npmrc
+          mountPath: /etc/gaspezia/npm
     - name: sonar-scanner
       image: sonarsource/sonar-scanner-cli:latest
       command: ["cat"]
@@ -281,6 +328,47 @@ spec:
         name: gaspezia-ca
         items:
           - { key: ca.crt, path: ca.crt }
+    # Fragment de `.npmrc` d'authentification au depot npm-private du Nexus
+    # (compte de lecture `svc-npm-pull`). Contenu attendu, et RIEN d'autre :
+    #   //nexus.gaspezia.lan/repository/npm-private/:_auth=<base64 user:mdp>
+    #   //nexus.gaspezia.lan/repository/npm-private/:always-auth=true
+    # (`_authToken=` est accepte a la place de `_auth=`.)
+    #
+    # ATTENTION : AUCUNE ligne `registry=` dans ce Secret. C'est la condition
+    # d'INERTIE pour les fronts qui ne consomment aucun paquet `@gaspezia/*`
+    # — c'est-a-dire, au 2026-08-07, TOUS ceux qui appellent ce step, puisque
+    # bot-twitch-web a encore son propre Jenkinsfile.
+    # Monte en config UTILISATEUR de leur conteneur `node`, un
+    # fragment qui ne contient que des cles `//host/path/:...` ne s'applique
+    # qu'aux requetes vers CE depot : leur registre par defaut reste
+    # registry.npmjs.org, leur `.npmrc` de depot n'est pas remplace (couche
+    # PROJET, prioritaire), et node:22-bookworm n'a pas de `/root/.npmrc` a
+    # ecraser. Cote `kaniko`, leur Dockerfile ne lit jamais
+    # /kaniko/nexus-npmrc, et Kaniko ne snapshotte pas /kaniko : rien n'entre
+    # dans leurs images. Verifie a la main, fragment monte en userconfig :
+    #   pnpm config get registry  ->  https://registry.npmjs.org/  (inchange)
+    #
+    # Pas de `defaultMode` restrictif : le mode par defaut (0644) laisse le
+    # fragment lisible quel que soit l'uid, alors qu'un 0400 le reserverait a
+    # root et casserait si le pod venait a tourner en non-root. Meme choix que
+    # `nexus-ci`, dont le credential Docker est deja monte ainsi.
+    #
+    # `optional: true` : le SealedSecret `nexus-npmrc` peut ne pas exister encore
+    # dans `jenkins-builds`. Secret absent => repertoire vide, pod sain. C'est ce
+    # qui rend ce bloc posable AVANT le Secret, et sans risque pour les autres
+    # fronts si le Secret venait a etre retire.
+    #
+    # `items` fige la cle a `.npmrc` : seul moyen d'avoir un chemin STABLE pour
+    # NPM_CONFIG_USERCONFIG cote `node` et pour la recherche du Dockerfile cote
+    # `kaniko`. Une cle mal nommee est ignoree sans bloquer le pod (semantique
+    # `optional`), et ressort en erreur explicite du garde-fou du Dockerfile
+    # plutot qu'en 401 illisible dix minutes plus tard.
+    - name: nexus-npmrc
+      secret:
+        secretName: nexus-npmrc
+        optional: true
+        items:
+          - { key: .npmrc, path: .npmrc }
 """
 }
 
