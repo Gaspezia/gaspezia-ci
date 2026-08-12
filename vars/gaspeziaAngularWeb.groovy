@@ -133,7 +133,9 @@ def call(Map config = [:]) {
                     stage('Quality (CI)') {
                         // Meme perimetre que le `when` d'origine : PR, dev, main.
                         if (env.CHANGE_ID || env.BRANCH_NAME in ['dev', 'main']) {
-                            gaspeziaNodeQuality(sonarBranch: sonarBranch)
+                            // Le drapeau traverse : c'est le Jenkinsfile du
+                            // depot qui decide. Defaut non bloquant.
+                            gaspeziaNodeQuality(sonarBranch: sonarBranch, blocking: config.blocking ?: false)
                         } else {
                             echo "Quality (CI) saute : ni PR, ni dev, ni main (branche ${env.BRANCH_NAME})."
                         }

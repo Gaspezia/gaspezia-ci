@@ -228,7 +228,9 @@ spec:
             stage('Quality (CI)') {
                 when { anyOf { changeRequest(); branch 'dev'; branch 'main' } }
                 steps {
-                    script { gaspeziaNodeQuality() }
+                    // Le drapeau traverse : c'est le Jenkinsfile du depot qui
+                    // decide, pas le pipeline partage. Defaut non bloquant.
+                    script { gaspeziaNodeQuality(blocking: config.blocking ?: false) }
                 }
             }
 
