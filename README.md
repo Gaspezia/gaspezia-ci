@@ -43,7 +43,7 @@ Dans tous les cas : notification Discord native (curl) puis `cleanWs()`.
 | `buildMigrateImage` | `true` | `false` si le repo n'a pas de gate pré-migration (pas de Prisma) |
 | `partOf` | `imageName` | label `app.kubernetes.io/part-of` |
 | `nodeImage` | `node:22-bookworm` | conteneur CI, **pas** le runtime applicatif |
-| `resources` | cf. source | plafonds par conteneur. Clés : `jnlpCpuLimit`, `kanikoCpuLimit`, `kanikoMigrateCpuLimit`, `kanikoMigrateMemLimit`, `nodeCpuLimit`, `nodeMemLimit`, `sonarCpuLimit`, `sonarMemLimit`. `nodeMemLimit` à `3Gi` (OOMKill du 2026-08-05) ; `kanikoMigrateCpuLimit` retombe sur `kanikoCpuLimit` |
+| `resources` | cf. source | plafonds par conteneur. Clés : `jnlpCpuLimit`, `kanikoCpuLimit`, **`kanikoMemLimit`**, `kanikoMigrateCpuLimit`, `kanikoMigrateMemLimit`, `nodeCpuLimit`, `nodeMemLimit`, `sonarCpuLimit`, `sonarMemLimit`. `nodeMemLimit` à `3Gi` (OOMKill du 2026-08-05) ; `kanikoMemLimit` à `4Gi` — kaniko garde les instantanés d'étape en mémoire, un dépôt qui construit une image lourde doit la remonter (OOMKill de `gaspezia-voice`, 2026-08-30) ; `kanikoMigrateCpuLimit` retombe sur `kanikoCpuLimit` |
 | `gitCredentialsId` / `discordCredentialsId` | `github-gaspezia-stacks` / `discord-webhook` | |
 
 ### Pré-requis dans le repo consommateur

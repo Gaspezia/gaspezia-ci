@@ -55,6 +55,14 @@ def call(Map config = [:]) {
         sonarCpuLimit : r.sonarCpuLimit ?: '3',
         sonarMemLimit : r.sonarMemLimit ?: '2Gi',
         kanikoCpuLimit: r.kanikoCpuLimit?: '4',
+        // Symetrique de kanikoMigrateMemLimit, qui existait deja : sans cette cle, la memoire
+        // du conteneur kaniko principal etait CODEE EN DUR a 4Gi et un depot n'avait aucun
+        // moyen d'en demander plus. Un depot qui construit une image lourde partait alors en
+        // OOMKilled sans recours — vecu sur gaspezia-voice le 2026-08-30, qui cuit un modele
+        // de transcription dans son image : kaniko garde les instantanes d'etape en memoire,
+        // et `node_modules` complet (~100 000 fichiers) suffit a saturer 4Gi.
+        // Defaut inchange : les depots existants ne bougent pas.
+        kanikoMemLimit: r.kanikoMemLimit ?: '4Gi',
         // Le conteneur kaniko-migrate a ses PROPRES plafonds : gaspezia-minecraft-api le
         // limite a 1 CPU / 2Gi la ou son kaniko principal est a 2 CPU / 4Gi. Sans ces deux
         // cles, la bibliotheque ne savait pas exprimer ce depot et sa migration n'aurait
@@ -106,7 +114,7 @@ spec:
       tty: true
       resources:
         requests: { cpu: "250m", memory: "1536Mi", ephemeral-storage: "6Gi" }
-        limits:   { cpu: "${res.kanikoCpuLimit}", memory: "4Gi", ephemeral-storage: "12Gi" }
+        limits:   { cpu: "${res.kanikoCpuLimit}", memory: "${res.kanikoMemLimit}", ephemeral-storage: "12Gi" }
       volumeMounts:
         - name: nexus-docker-config
           mountPath: /kaniko/.docker
