@@ -167,6 +167,24 @@ def call(Map config = [:]) {
                     stage('CI - PR Compile Check') {
                         if (env.CHANGE_ID) {
                             env.PIPELINE_MODE = 'pr'
+                            // ⚠️ `--single-snapshot` ICI ET NULLE PART AILLEURS.
+                            //
+                            // Par defaut kaniko prend un instantane du systeme de
+                            // fichiers APRES CHAQUE instruction, et les garde. Sur
+                            // un front Angular, le `pnpm install` seul depose
+                            // ~100 000 fichiers : c'est ce volume, pas le code,
+                            // qui remplit la memoire.
+                            //
+                            // Cet etage est en `--no-push` : l'image produite est
+                            // jetee, on ne veut que le verdict de compilation. Les
+                            // couches intermediaires ne servent donc a RIEN, et un
+                            // instantane unique en fin de build est gratuit par
+                            // construction.
+                            //
+                            // ⚠️ Ne pas recopier ce drapeau sur l'etage `Build &
+                            // Push` : celui-la publie l'image, et ecraser ses
+                            // couches en une seule detruirait le partage de
+                            // couches entre versions au registre.
                             container('kaniko') {
                                 sh """
                                   /kaniko/executor \\
@@ -174,6 +192,7 @@ def call(Map config = [:]) {
                                     --dockerfile ${dockerfile} \\
                                     --target ${prTarget} \\
                                     --compressed-caching=false \\
+                                    --single-snapshot \\
                                     --no-push
                                 """
                             }
