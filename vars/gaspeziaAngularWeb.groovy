@@ -57,7 +57,7 @@
 //   stacksStagingKustomization  (defaut: k8s/<imageName>-staging/base/kustomization.yaml)
 //   resources          Map de limits surchargeables : jnlpCpuLimit (2),
 //                      kanikoCpuLimit (2), kanikoMemLimit (4Gi), nodeCpuLimit (3),
-//                      nodeMemLimit (3Gi),
+//                      nodeMemLimit (3Gi), vitestMaxWorkers (= nodeCpuLimit),
 //                      sonarCpuLimit (3), sonarMemLimit (2Gi). Les `requests`
 //                      ne sont PAS surchargeables : elles seules pesent sur
 //                      l'ordonnancement et sont deja harmonisees sur tout le parc.
@@ -119,6 +119,12 @@ def call(Map config = [:]) {
         // ce qui a garde bot-twitch-web hors du gabarit partage.
         // Defaut inchange : les six fronts deja migres ne bougent pas.
         kanikoMemLimit: r.kanikoMemLimit ?: '4Gi',
+        // ⚠️ Nombre de workers vitest — cf. `VITEST_MAX_WORKERS` dans le
+        // conteneur `node`. Par defaut on recopie `nodeCpuLimit` : le bug qu'on
+        // corrige est precisement que vitest ne voit PAS la limite du cgroup, on
+        // la lui dit donc explicitement. Surchargeable a part pour un depot dont
+        // les tests seraient plus gourmands que la moyenne par worker.
+        vitestMaxWorkers: r.vitestMaxWorkers ?: r.nodeCpuLimit ?: '3',
     ]
 
     // Equivalent du `options { disableConcurrentBuilds() }` declaratif : deux
@@ -319,6 +325,25 @@ spec:
         # exactement comme un `~/.npmrc` inexistant.
         - name: NPM_CONFIG_USERCONFIG
           value: /etc/gaspezia/npm/.npmrc
+        # ⚠️ SANS CETTE VARIABLE, LE CONTENEUR SE FAIT OOMKILL AU HASARD.
+        #
+        # vitest dimensionne son pool de workers sur `os.cpus().length`, qui dans
+        # un conteneur rend les CPU de l'HOTE — pas la limite du cgroup. Le parc
+        # a des noeuds a 4 CPU et des noeuds a 8 : le MEME commit prend donc 4 ou
+        # 8 workers selon l'endroit ou l'agent atterrit, et la memoire suit.
+        #
+        # Mesure du 2026-08-31 sur la suite de bot-twitch-web (2435 tests, avec
+        # couverture) : 21 processus et un pic de 12,3 Gio sur une machine a
+        # 18 CPU, soit ~590 Mio par worker. Contre une limite de 3Gi, ca passe a
+        # 4 workers et ca meurt a 8. C'est exactement ce qu'on a observe : PR-79
+        # a fini la suite, PR-80 s'est fait OOMKill au milieu — meme depot, meme
+        # limite, deux noeuds differents. Un defaut qui se lit comme une
+        # flakiness de test alors que c'est de l'ordonnancement.
+        #
+        # On dit donc a vitest ce que le cgroup lui accorde. Le build y perd du
+        # parallelisme sur un gros noeud ; il y gagne d'etre reproductible.
+        - name: VITEST_MAX_WORKERS
+          value: "${res.vitestMaxWorkers}"
       resources:
         requests: { cpu: "200m", memory: "768Mi" }
         # 3Gi et non 2Gi : mesure Prometheus sur 7 j, pic reel du conteneur `node`
