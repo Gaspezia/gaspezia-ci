@@ -106,7 +106,7 @@ Mapping branche → build :
 | `buildArgs` | `[:]` | `--build-arg` supplémentaires |
 | `stacksProdKustomization` | `k8s/<imageName>/base/kustomization.yaml` | |
 | `stacksStagingKustomization` | `k8s/<imageName>-staging/base/kustomization.yaml` | |
-| `resources` | `[jnlpCpuLimit:'2', kanikoCpuLimit:'2', nodeCpuLimit:'3', nodeMemLimit:'3Gi', sonarCpuLimit:'3', sonarMemLimit:'2Gi']` | voir ci-dessous |
+| `resources` | `[jnlpCpuLimit:'2', kanikoCpuLimit:'2', kanikoMemLimit:'4Gi', nodeCpuLimit:'3', nodeMemLimit:'3Gi', sonarCpuLimit:'3', sonarMemLimit:'2Gi']` | voir ci-dessous |
 | `gitCredentialsId` / `discordCredentialsId` / `sonarBranch` | `github-gaspezia-stacks` / `discord-webhook` / `dev` | |
 
 Exemples réels du parc :
@@ -118,7 +118,18 @@ gaspeziaAngularWeb(imageName: 'gaspezia-asso', devConfiguration: 'production')
 // dorangeonTraiteur : seul dépôt du parc encore à 500m/1/1, déclaré explicitement
 gaspeziaAngularWeb(imageName: 'dorangeontraiteur-web', devConfiguration: 'staging',
                    resources: [jnlpCpuLimit: '500m', nodeCpuLimit: '1', sonarCpuLimit: '1'])
+
+// bot-twitch-web : deux bundles (application + overlay) et un prérendu de
+// 4 routes dans le même étage de build — 4Gi n'y suffit pas
+gaspeziaAngularWeb(imageName: 'bot-twitch-web', blocking: true,
+                   resources: [kanikoMemLimit: '6Gi'])
 ```
+
+**`--compressed-caching=false` est passé aux deux invocations de kaniko**, pour tous
+les fronts. Par défaut kaniko garde le contenu *compressé* des couches en mémoire, ce
+qui a tué trois releases de bot-twitch-web d'affilée en `OOMKilled` (v1.37.0, v1.38.0,
+v1.38.2) — build `ABORTED`, aucune image poussée, et un statut GitHub muet sur la
+cause. Le drapeau coûte un peu de vitesse ; `kanikoMemLimit` ne traite que le symptôme.
 
 **Seules les `limits` sont surchargeables.** Les défauts sont ceux de six fronts sur
 sept *et* de `gaspeziaNodeApi` ; dorangeonTraiteur est le seul à valoir `500m/1/1` et

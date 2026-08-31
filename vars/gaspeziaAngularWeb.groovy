@@ -27,6 +27,15 @@
 // sonar-project.properties, et les credentials Jenkins github-gaspezia-stacks,
 // discord-webhook, sonarqube-token.
 //
+// ⚠️ `--compressed-caching=false` sur les DEUX invocations de kaniko. Par defaut
+// kaniko garde le contenu COMPRESSE des couches en memoire ; sur un front
+// Angular, dont l'etage de build porte `node_modules` et deux bundles, ca suffit
+// a faire sauter le plafond. Mesure sur bot-twitch-web : trois releases mortes
+// en `Container [kaniko] terminated [OOMKilled]` (v1.37.0 le 2026-08-29,
+// v1.38.0 le 30, v1.38.2 le 31), build ABORTED, aucune image poussee — et un
+// statut GitHub qui ne dit pas pourquoi. Le drapeau coute un peu de vitesse de
+// build ; c'est la cause, la limite memoire n'est que le symptome.
+//
 // Acces au Nexus npm : le pod monte, EN OPTIONNEL, le Secret `nexus-npmrc` du
 // namespace `jenkins-builds` (fragment d'authentification au depot npm-private).
 // Rien a declarer cote depot : un front qui ne consomme aucun paquet
@@ -47,7 +56,8 @@
 //   stacksProdKustomization     (defaut: k8s/<imageName>/base/kustomization.yaml)
 //   stacksStagingKustomization  (defaut: k8s/<imageName>-staging/base/kustomization.yaml)
 //   resources          Map de limits surchargeables : jnlpCpuLimit (2),
-//                      kanikoCpuLimit (2), nodeCpuLimit (3), nodeMemLimit (3Gi),
+//                      kanikoCpuLimit (2), kanikoMemLimit (4Gi), nodeCpuLimit (3),
+//                      nodeMemLimit (3Gi),
 //                      sonarCpuLimit (3), sonarMemLimit (2Gi). Les `requests`
 //                      ne sont PAS surchargeables : elles seules pesent sur
 //                      l'ordonnancement et sont deja harmonisees sur tout le parc.
@@ -102,6 +112,13 @@ def call(Map config = [:]) {
         nodeMemLimit  : r.nodeMemLimit   ?: '3Gi',
         sonarCpuLimit : r.sonarCpuLimit  ?: '3',
         sonarMemLimit : r.sonarMemLimit  ?: '2Gi',
+        // ⚠️ Symetrique de `gaspeziaNodeApi.kanikoMemLimit`, qui existait deja.
+        // Sans cette cle, la memoire du conteneur kaniko etait CODEE EN DUR a
+        // 4Gi : un front qui la depasse n'avait aucun moyen de la desserrer
+        // sans recopier tout le pipeline dans son depot — et c'est exactement
+        // ce qui a garde bot-twitch-web hors du gabarit partage.
+        // Defaut inchange : les six fronts deja migres ne bougent pas.
+        kanikoMemLimit: r.kanikoMemLimit ?: '4Gi',
     ]
 
     // Equivalent du `options { disableConcurrentBuilds() }` declaratif : deux
@@ -150,6 +167,7 @@ def call(Map config = [:]) {
                                     --context dir://\$(pwd) \\
                                     --dockerfile ${dockerfile} \\
                                     --target ${prTarget} \\
+                                    --compressed-caching=false \\
                                     --no-push
                                 """
                             }
@@ -184,6 +202,7 @@ def call(Map config = [:]) {
                                         --context dir://$(pwd) \
                                         --dockerfile ${DOCKERFILE} \
                                         --target ${KANIKO_TARGET} \
+                                        --compressed-caching=false \
                                         ${KANIKO_BUILD_ARGS} \
                                         ${DEST}
                                     '''
@@ -253,7 +272,7 @@ spec:
       tty: true
       resources:
         requests: { cpu: "250m", memory: "1536Mi", ephemeral-storage: "4Gi" }
-        limits:   { cpu: "${res.kanikoCpuLimit}", memory: "4Gi", ephemeral-storage: "8Gi" }
+        limits:   { cpu: "${res.kanikoCpuLimit}", memory: "${res.kanikoMemLimit}", ephemeral-storage: "8Gi" }
       volumeMounts:
         - name: nexus-docker-config
           mountPath: /kaniko/.docker
