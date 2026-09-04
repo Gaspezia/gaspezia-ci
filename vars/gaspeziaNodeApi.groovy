@@ -40,6 +40,22 @@ def call(Map config = [:]) {
     // email-sender-api n'a pas de gate pre-migration (pas de Prisma) : pas d'image -migrate,
     // et donc pas de conteneur kaniko-migrate a provisionner pour rien.
     boolean buildMigrate  = config.containsKey('buildMigrateImage') ? config.buildMigrateImage : true
+    // `--reproducible` : normalise les horodatages des couches produites. Sans lui, le mtime
+    // du repertoire /app est reecrit par CHAQUE `COPY` de l'etage runtime, ce qui suffit a
+    // changer le sha256 de toutes les couches applicatives — y compris celle de node_modules,
+    // qui pese 178 Mo sur les API NestJS. Le registre en stocke alors une copie par build :
+    // mesure du 2026-09-03 sur bot-twitch-api, 205 copies distinctes de cette seule couche,
+    // ~36 Go pour un contenu identique, premier poste de remplissage du NFS partage.
+    //
+    // ⚠️ OPT-IN, et ce n'est pas de la timidite : kaniko garde ses instantanes en memoire et
+    // `--reproducible` le fait REECRIRE toutes les couches. Le meme conteneur part deja en
+    // OOMKilled sur une image lourde a 4Gi (gaspezia-voice, 2026-08-30). Un depot qui active
+    // ce drapeau doit s'attendre a remonter `kanikoMemLimit` / `kanikoMigrateMemLimit`.
+    // A n'etendre aux autres depots qu'apres validation du pilote.
+    //
+    // Le drapeau ne sert QUE les etages qui poussent : le check de PR est en `--no-push`,
+    // il ne publie aucune couche, l'y ajouter ne ferait que consommer de la memoire.
+    boolean reproducible  = config.containsKey('reproducible') ? config.reproducible : false
 
     // Ressources : `requests` = ce qui pese sur l'ordonnancement k8s, `limits` = plafond qui
     // ne reserve rien. D'ou des requests modestes et des limits hautes.
@@ -225,6 +241,9 @@ spec:
         environment {
             DOCKER_REGISTRY_PRIVATE = "${registry}"
             IMAGE_NAME              = "${imageName}"
+            // Vide ou '--reproducible' : les blocs `sh` ci-dessous sont en quotes SIMPLES
+            // (aucune interpolation Groovy), le drapeau doit donc leur parvenir par l'env.
+            KANIKO_REPRODUCIBLE     = "${reproducible ? '--reproducible' : ''}"
         }
 
         stages {
@@ -320,6 +339,7 @@ spec:
                             --dockerfile Dockerfile \
                             --target runtime \
                             --skip-unused-stages=true \
+                            ${KANIKO_REPRODUCIBLE} \
                             ${DEST}
                         '''
                     }
@@ -339,6 +359,7 @@ spec:
                                     --dockerfile Dockerfile \
                                     --target migrate \
                                     --skip-unused-stages=true \
+                                    ${KANIKO_REPRODUCIBLE} \
                                     ${DEST_MIGRATE}
                                 '''
                             }
