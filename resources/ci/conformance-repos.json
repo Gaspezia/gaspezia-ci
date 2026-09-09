@@ -50,6 +50,11 @@
       "dispenses": {}
     },
     {
+      "nom": "grepo-watch-api",
+      "type": "api",
+      "dispenses": {}
+    },
+    {
       "nom": "bot-discord-web",
       "type": "web",
       "dispenses": {}
@@ -94,6 +99,11 @@
         "corepack": "2026-08-05 : 16e pipeline du parc, decouvert lors de l'audit de la refonte — il ne vit pas dans /home/WEB et a echappe a toute l'homogeneisation. NON migre car il n'a ni script `lint` ni sonar-project.properties : l'etape qualite de la bibliotheque tournerait a vide et le marquerait UNSTABLE en permanence. A migrer APRES lui avoir ajoute une config Sonar ; la dispense saute alors d'elle-meme.",
         "images-node": "2026-08-05 : 16e pipeline du parc, decouvert lors de l'audit de la refonte — il ne vit pas dans /home/WEB et a echappe a toute l'homogeneisation. NON migre car il n'a ni script `lint` ni sonar-project.properties : l'etape qualite de la bibliotheque tournerait a vide et le marquerait UNSTABLE en permanence. A migrer APRES lui avoir ajoute une config Sonar ; la dispense saute alors d'elle-meme."
       }
+    },
+    {
+      "nom": "grepo-watch-web",
+      "type": "web",
+      "dispenses": {}
     }
   ],
   "_dispenses": "Une dispense est un ecart CONNU et assume : \"dispenses\": { \"<id-de-regle>\": \"raison datee\" }. Elle laisse l'ecart VISIBLE dans le rapport mais ne fait plus echouer l'audit. Volontairement nominative et en clair ici : une dispense doit se voir en relecture de PR, sinon c'est une desactivation silencieuse du controle. Aucune au 2026-08-05.",
