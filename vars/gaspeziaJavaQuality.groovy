@@ -10,9 +10,10 @@
 //     } }
 //   }
 // Pre-requis repo : pod avec conteneurs 'maven' (déjà là) + 'node' (à ajouter, pour le reporter).
-// Credentials Jenkins : sonarqube-token, discord-webhook. Non bloquant. JaCoCo/sonar via goals CLI (rien dans le pom).
+// Credentials Jenkins : sonarqube-token, discord-webhook. Non bloquant.
+// Analyse via le ClusterIP (pas l'URL publique) : voir gaspezia-stacks k8s/sonarqube/base/networkpolicy.yaml. JaCoCo/sonar via goals CLI (rien dans le pom).
 def call(Map config = [:]) {
-    String sonarHost   = config.sonarHostUrl  ?: 'https://sonarqube.gaspezia.fr'
+    String sonarHost   = config.sonarHostUrl  ?: 'http://sonarqube.gaspezia-sonarqube.svc.cluster.local:9000'
     String sonarBranch = config.sonarBranch   ?: 'dev'
     String jacocoVer   = config.jacocoVersion ?: '0.8.15'
     String projectKey  = config.projectKey

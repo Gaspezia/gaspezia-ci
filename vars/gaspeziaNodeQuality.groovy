@@ -26,7 +26,7 @@
 // Credentials Jenkins : sonarqube-token, discord-webhook. Sonar INFO ne bloque JAMAIS.
 // La version pnpm vient du champ packageManager du repo (corepack). ng test (Angular) = sauté (Chrome requis).
 def call(Map config = [:]) {
-    String sonarHost   = config.sonarHostUrl ?: 'https://sonarqube.gaspezia.fr'
+    String sonarHost   = config.sonarHostUrl ?: 'http://sonarqube.gaspezia-sonarqube.svc.cluster.local:9000'
     String sonarBranch = config.sonarBranch  ?: 'dev'
     // Opt-in : cf. l'avertissement en tete de fichier.
     boolean blocking   = config.blocking ?: false
